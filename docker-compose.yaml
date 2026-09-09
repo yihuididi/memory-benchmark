@@ -1,0 +1,32 @@
+services:
+  bench:
+    image: memory-bench:local
+    build:
+      context: .
+      args:
+        # Optional dependency extra defined in pyproject.toml.
+        BENCH_EXTRA: ""
+    # Select the experiment here, then start it with `docker compose up`.
+    command: ["run", "--config", "configs/demo.toml"]
+    restart: "no"
+    init: true
+    environment:
+      HF_HOME: /app/models/huggingface
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # The single selected host GPU is CUDA device 0 inside the container.
+      CUDA_VISIBLE_DEVICES: "0"
+    # For CPU-only runs, remove deploy and the two GPU environment settings.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # Select one host GPU index or UUID from `nvidia-smi -L` here.
+              device_ids: ["0"]
+              capabilities: [gpu]
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data:/app/data:ro
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./artifacts:/app/artifacts

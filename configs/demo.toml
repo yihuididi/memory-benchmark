@@ -1,0 +1,22 @@
+[run]
+results_dir = "results"
+artifacts_dir = "artifacts"
+
+[agent]
+type = "shared"
+
+[generation]
+type = "deterministic"
+
+[generation.settings]
+temperature = 0.0
+
+[[benchmarks]]
+type = "synthetic"
+
+[[memories]]
+type = "none"
+
+[[memories]]
+name = "verbatim"
+type = "verbatim"

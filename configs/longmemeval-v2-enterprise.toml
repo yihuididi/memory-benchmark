@@ -1,0 +1,38 @@
+# Repository agent/generator plus a local Qwen3 judge.
+# Set generation.options to your vision-capable model server before running.
+[agent]
+type = "longmemeval_v2"
+[agent.options]
+domain = "enterprise"
+memory_context_max_tokens = 200000
+processor_path = "Qwen/Qwen3.5-9B"
+
+[generation]
+type = "openai_compatible"
+[generation.options]
+model = "Qwen/Qwen3.5-9B"
+base_url = "http://localhost:8023/v1"
+api_key_env = "READER_API_KEY"
+[generation.settings]
+max_tokens = 20000
+temperature = 0.6
+top_p = 0.95
+[generation.settings.extra_body]
+top_k = 20
+
+[[benchmarks]]
+type = "longmemeval_v2"
+[benchmarks.options]
+data_root = "data/longmemeval-v2"
+domain = "enterprise"
+tier = "small"
+# limit = 5  # Development subset; remove for a complete domain run.
+[benchmarks.options.evaluator]
+backend = "transformers"
+model_path = "models/Qwen3-8B"
+device = "cuda"
+dtype = "auto"
+max_new_tokens = 512
+
+[[memories]]
+type = "none"
