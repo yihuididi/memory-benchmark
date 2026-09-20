@@ -4,10 +4,10 @@ services:
     build:
       context: .
       args:
-        # Optional dependency extra defined in pyproject.toml.
-        BENCH_EXTRA: ""
+        # Space-separated optional extras from pyproject.toml; use "" for the demo.
+        BENCH_EXTRA: "model-api local-judge"
     # Select the experiment here, then start it with `docker compose up`.
-    command: ["run", "--config", "configs/demo.toml"]
+    command: ["run", "--config", "configs/longmemeval-v2-enterprise.toml"]
     restart: "no"
     init: true
     environment:

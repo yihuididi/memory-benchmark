@@ -11,13 +11,14 @@ COPY pyproject.toml uv.lock README.md .python-version ./
 COPY src/ ./src/
 COPY configs/ ./configs/
 
-# An optional dependency extra can contain one or several backend SDKs.
+# Space-separated optional dependency extras from pyproject.toml.
 ARG BENCH_EXTRA=""
-RUN if [ -n "$BENCH_EXTRA" ]; then \
-        uv sync --locked --no-dev --extra "$BENCH_EXTRA"; \
-    else \
-        uv sync --locked --no-dev; \
-    fi
+RUN set -eu; set -f; \
+    set --; \
+    for extra in $BENCH_EXTRA; do \
+        set -- "$@" --extra "$extra"; \
+    done; \
+    uv sync --locked --no-dev "$@"
 RUN mkdir -p data models results artifacts
 
 ENTRYPOINT ["uv", "run", "--no-sync", "memory-bench"]
