@@ -47,7 +47,7 @@ def test_dataset_cannot_select_arbitrary_callables_or_judge_configuration(spec):
 def fake_client(text, calls, closed):
     def create(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason="stop")])
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
                            close=lambda: closed.append(True))
 
@@ -59,38 +59,46 @@ def fake_client(text, calls, closed):
 def test_judge_receives_official_rubric_full_response_and_private_reference(tmp_path, monkeypatch, name, category, builder):
     calls, closed = [], []
     monkeypatch.setenv("TEST_JUDGE_KEY", "key")
-    monkeypatch.setattr("memory_bench.benchmarks.longmemeval_v2.create_client",
+    monkeypatch.setattr("memory_bench.generators.openai_compatible.create_client",
                         lambda **kwargs: fake_client('{"label": 1, "reason": "Correct insight"}', calls, closed))
-    benchmark = LongMemEvalV2Benchmark(data_root=tmp_path, evaluator={"api_key_env": "TEST_JUDGE_KEY"})
+    from memory_bench.generators.openai_compatible import OpenAICompatibleGenerator
+    generator = OpenAICompatibleGenerator(model="test-judge", base_url="http://localhost:1234/v1", api_key_env="TEST_JUDGE_KEY")
+    benchmark = LongMemEvalV2Benchmark(data_root=tmp_path)
+    benchmark.bind_generation(generator, {"reasoning_effort": "medium", "max_completion_tokens": 4096})
     item = case(name, "private reference", category)
     prediction = Prediction(r"Full explanation. \boxed{Final insight}")
     assert benchmark.score(item, prediction)["score"] == 1
     request = calls[0]
     assert request["messages"] == builder(question_text=item.request.question, reference_answer=item.reference,
                                            model_full_response=prediction.answer, model_final_answer="Final insight")
-    assert request["model"] == "gpt-5.2"
+    assert request["model"] == "test-judge"
     assert request["reasoning_effort"] == "medium"
     assert request["max_completion_tokens"] == 4096
     assert benchmark.evaluation_details()["judge"]["reason"] == "Correct insight"
     # Explicit UNKNOWN overrides a positive judge label, exactly as upstream.
     assert benchmark.score(item, Prediction(r"\boxed{UNKNOWN}"))["score"] == 0
     benchmark.close()
+    assert closed == []
+    generator.close()
     assert closed == [True]
 
 
 def test_invalid_judgement_raises_instead_of_becoming_a_wrong_answer(monkeypatch):
-    judge = Judge(base_url="http://localhost:1234/v1")
-    monkeypatch.setattr("memory_bench.benchmarks.longmemeval_v2.create_client",
+    from memory_bench.generators.openai_compatible import OpenAICompatibleGenerator
+    generator = OpenAICompatibleGenerator(model="test", base_url="http://localhost:1234/v1")
+    judge = Judge(generator, {})
+    monkeypatch.setattr("memory_bench.generators.openai_compatible.create_client",
                         lambda **kwargs: fake_client("I cannot produce a label", [], []))
     with pytest.raises(ValueError, match="Could not parse"):
         judge.score("llm_gotchas_checker", question="q", reference="r", raw="a", parsed="a")
     judge.close()
+    generator.close()
 
 
-def test_llm_judge_requires_configuration_without_contacting_api(monkeypatch):
-    monkeypatch.delenv("MISSING_JUDGE_KEY", raising=False)
-    with pytest.raises(ValueError, match="MISSING_JUDGE_KEY"):
-        Judge(api_key_env="MISSING_JUDGE_KEY").preflight()
+def test_llm_judge_requires_configuration_without_contacting_api(tmp_path):
+    benchmark = LongMemEvalV2Benchmark(data_root=tmp_path)
+    with pytest.raises(ValueError, match="Configure benchmarks.generation"):
+        benchmark._get_judge()
 
 
 def test_aggregate_matches_upstream_denominators_and_undefined_categories(tmp_path):

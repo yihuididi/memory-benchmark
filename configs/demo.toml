@@ -5,10 +5,13 @@ artifacts_dir = "artifacts"
 [agent]
 type = "shared"
 
-[generation]
+[generators.reader]
 type = "deterministic"
 
-[generation.settings]
+[agent.generation]
+generator = "reader"
+
+[agent.generation.settings]
 temperature = 0.0
 
 [[benchmarks]]

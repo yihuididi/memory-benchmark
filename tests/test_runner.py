@@ -247,7 +247,7 @@ def test_generation_constructor_failure_closes_already_created_memory(
 
     class Memory(BaseMemory):
         def prepare(self, records, workspace):
-            pytest.fail("Preparation must wait until generation construction succeeds")
+            pass  # Lazy backends are constructed on their first use.
 
         def augment(self, request):
             return MemoryAugmentation()
@@ -316,7 +316,7 @@ def test_unknown_type_lists_available_registrations(config_factory):
 def test_config_rejects_retired_class_key(tmp_path):
     config_path = tmp_path / "invalid.toml"
     config_path.write_text(
-        '[generation]\nclass = "memory_bench.demos:DeterministicGenerator"\n'
+        '[generators.reader]\nclass = "memory_bench.demos:DeterministicGenerator"\n'
         '[[benchmarks]]\ntype = "synthetic"\n'
         '[[memories]]\ntype = "none"\n',
         encoding="utf-8",

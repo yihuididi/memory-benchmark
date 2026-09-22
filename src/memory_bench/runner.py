@@ -17,6 +17,7 @@ from memory_bench.agents import AGENTS, BaseAgent
 from memory_bench.benchmarks import BENCHMARKS, BaseBenchmark
 from memory_bench.config import PluginError, RunConfig, instantiate, resolve_class
 from memory_bench.generators import GENERATORS, BaseGenerator
+from memory_bench.generators.lazy import LazyGenerator
 from memory_bench.memories import MEMORIES, BaseMemory
 
 
@@ -95,12 +96,23 @@ def run(config: RunConfig) -> Path:
         for spec in config.memories:
             resolve_class(spec, MEMORIES, BaseMemory)
         resolve_class(config.agent, AGENTS, BaseAgent)
-        resolve_class(config.generation, GENERATORS, BaseGenerator)
+        for spec in config.generators.values():
+            resolve_class(spec, GENERATORS, BaseGenerator)
+        agent_binding = config.agent.generation
+        agent_generator = config.generators[agent_binding.generator]
+
+        def bind(component, spec, resources):
+            if spec.generation is not None:
+                handle = LazyGenerator(config.generators[spec.generation.generator])
+                resources.insert(len(resources) - 1, handle)
+                component.bind_generation(handle, spec.generation.settings)
+
         for spec in config.benchmarks:
             with _resources() as resources:
                 benchmark = instantiate(spec, BENCHMARKS, BaseBenchmark)
                 resources.append(benchmark)
-                benchmark.validate_run(config.agent, config.generation)
+                bind(benchmark, spec, resources)
+                benchmark.validate_run(config.agent, agent_generator)
         artifacts.mkdir(parents=True, exist_ok=False)
         with (output / "predictions.jsonl").open("w", encoding="utf-8") as predictions, \
                 (output / "generations.jsonl").open("w", encoding="utf-8") as generations:
@@ -109,7 +121,8 @@ def run(config: RunConfig) -> Path:
                     with _resources() as pair_resources:
                         benchmark = instantiate(benchmark_spec, BENCHMARKS, BaseBenchmark)
                         pair_resources.append(benchmark)
-                        benchmark.validate_run(config.agent, config.generation)
+                        bind(benchmark, benchmark_spec, pair_resources)
+                        benchmark.validate_run(config.agent, agent_generator)
                         pair: dict[str, Any] = {
                             "benchmark": benchmark_spec.name,
                             "memory": memory_spec.name,
@@ -133,7 +146,8 @@ def run(config: RunConfig) -> Path:
                             with _resources() as resources:
                                 memory = instantiate(memory_spec, MEMORIES, BaseMemory)
                                 resources.append(memory)
-                                generation = instantiate(config.generation, GENERATORS, BaseGenerator)
+                                bind(memory, memory_spec, resources)
+                                generation = LazyGenerator(agent_generator)
                                 resources.append(generation)
                                 agent = instantiate(config.agent, AGENTS, BaseAgent)
                                 before = time.perf_counter()
@@ -149,7 +163,7 @@ def run(config: RunConfig) -> Path:
                                     before = time.perf_counter()
                                     prediction = agent.answer(
                                         copy.deepcopy(case.request), memory, generation,
-                                        copy.deepcopy(config.generation_settings),
+                                        copy.deepcopy(agent_binding.settings),
                                     )
                                     inference_seconds = time.perf_counter() - before
                                     row = {

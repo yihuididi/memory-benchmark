@@ -57,10 +57,12 @@ def config_factory(tmp_path, monkeypatch):
             'artifacts_dir = "artifacts"',
             "[agent]",
             'type = "shared"',
-            "[generation]",
+            "[generators.reader]",
             f"type = {json.dumps(generation)}",
             options_line(generation_options or {}),
-            "[generation.settings]",
+            '[agent.generation]',
+            'generator = "reader"',
+            "[agent.generation.settings]",
             "temperature = 0.0",
         ]
         for section, entries in (("benchmarks", benchmarks), ("memories", memories)):

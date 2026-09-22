@@ -86,7 +86,7 @@ def test_names_default_to_types_and_repeated_names_are_rejected(config_factory):
     assert config.benchmarks[0].name == "synthetic"
     assert config.memories[0].name == "none"
     assert config.agent.name == "shared"
-    assert config.generation.name == "deterministic"
+    assert config.generators[config.agent.generation.generator].type == "deterministic"
     with pytest.raises(ConfigError, match="memories names must be unique"):
         config_factory(memories=[(None, "verbatim", {}), (None, "verbatim", {"separator": " "})])
     with pytest.raises(ConfigError, match="benchmarks names must be unique"):

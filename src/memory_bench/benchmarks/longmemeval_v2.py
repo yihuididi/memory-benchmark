@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 from collections.abc import Mapping, Sequence
+from functools import cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Sequence, Tuple
 
@@ -1034,69 +1035,48 @@ def judge_messages(name: str, *, question: str, reference: str, raw: str, parsed
                           model_full_response=raw.strip(), model_final_answer=parsed.strip())
 
 
-def create_client(**kwargs: Any) -> Any:
-    # Optional remote judge for reproducing upstream evaluation when explicitly configured.
-    from memory_bench.generators.openai_compatible import create_client as create
-    return create(**kwargs)
+@cache
+def binary_judgement_schema():
+    """Load the strict judgment schema only when LLM evaluation needs it."""
+    from pydantic import BaseModel, ConfigDict, Field
+
+    class BinaryJudgement(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+        label: int = Field(ge=0, le=1)
+        reason: str = Field(min_length=1)
+
+    return BinaryJudgement
 
 
 class Judge:
-    """Explicit OpenAI-compatible judge; the local implementation lives separately."""
+    """Benchmark rubric and strict parsing around a borrowed generator."""
 
-    def __init__(self, *, model: str = "gpt-5.2", base_url: str | None = None,
-                 api_key_env: str = "OPENAI_API_KEY", reasoning_effort: str | None = "medium",
-                 max_completion_tokens: int = 4096, temperature: float | None = None,
-                 top_p: float | None = None, timeout_seconds: float = 600.0) -> None:
-        if not isinstance(model, str) or not model.strip():
-            raise ValueError("evaluator.model must be a nonempty string")
-        if type(max_completion_tokens) is not int or max_completion_tokens <= 0:
-            raise ValueError("max_completion_tokens must be a positive integer")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive and finite")
-        self.model, self.base_url, self.api_key_env = model, base_url, api_key_env
-        self.options = dict(max_completion_tokens=max_completion_tokens,
-                            reasoning_effort=reasoning_effort, temperature=temperature,
-                            top_p=top_p, timeout_seconds=timeout_seconds)
-        self.client = None
+    def __init__(self, generator, settings):
+        self.generator = generator
+        self.settings = copy.deepcopy(dict(settings))
         self.details: dict[str, Any] = {}
 
-    def preflight(self) -> None:
-        if not self.base_url and not os.environ.get(self.api_key_env):
-            raise ValueError(f"LLM evaluator requires environment variable {self.api_key_env}")
+    def preflight(self):
+        self.generator.preflight()
 
     def score(self, name: str, **inputs: str) -> bool:
+        from memory_bench.types import Message
+        schema = binary_judgement_schema()
         self.details = {}
-        self.preflight()
-        if self.client is None:
-            self.client = create_client(base_url=self.base_url,
-                                        api_key=os.environ.get(self.api_key_env) or "EMPTY")
-        raw = metrics._call_chat_completion(client=self.client, model=self.model,
-                                           messages=judge_messages(name, **inputs), **self.options)
-        # Deliberately strict: malformed output is an evaluator failure, not a wrong answer.
-        from memory_bench.benchmarks.local_judge import BinaryJudgement
+        prediction = self.generator.generate_structured(
+            tuple(Message(**m) for m in judge_messages(name, **inputs)),
+            settings=copy.deepcopy(self.settings), schema=schema)
         try:
-            result = BinaryJudgement.model_validate_json(raw)
+            result = schema.model_validate_json(prediction.answer)
         except ValueError as exc:
-            raise ValueError(f"Could not parse evaluator binary judgement: {raw!r}") from exc
-        self.details = {"backend": "openai_compatible", "model": self.model,
-                        "base_url": self.base_url, **self.options, **result.model_dump(), "raw": raw}
+            raise ValueError(f"Could not parse evaluator binary judgement: {prediction.answer!r}") from exc
+        self.details = {**prediction.metadata, "settings": copy.deepcopy(self.settings),
+                        **result.model_dump(), "raw": prediction.answer}
         return result.label == 1
 
-    def close(self) -> None:
-        if self.client is not None:
-            self.client.close()
-            self.client = None
-
-
-def make_judge(options: Mapping[str, Any]):
-    options = dict(options)
-    backend = options.pop("backend", "openai_compatible")
-    if backend == "transformers":
-        from memory_bench.benchmarks.local_judge import LocalJudge
-        return LocalJudge(**options)
-    if backend == "openai_compatible":
-        return Judge(**options)
-    raise ValueError(f"Unsupported evaluator backend {backend!r}")
+    def close(self):
+        # The runner owns the borrowed generator.
+        pass
 
 
 def aggregate_scores(scores: Sequence[Mapping[str, float]]) -> dict[str, float]:
@@ -1206,7 +1186,6 @@ class LongMemEvalV2Benchmark(BaseBenchmark):
         tier: str = "small",
         domain: str | None = None,
         limit: int | None = None,
-        evaluator: Mapping[str, Any] | None = None,
     ) -> None:
         _require(tier in ("small", "medium"), "tier must be 'small' or 'medium'")
         _require(domain in (None, "web", "enterprise"), "domain must be 'web' or 'enterprise'")
@@ -1220,20 +1199,17 @@ class LongMemEvalV2Benchmark(BaseBenchmark):
         self.tier = tier
         self.domain = domain
         self.limit = limit
-        _require(evaluator is None or isinstance(evaluator, Mapping), "evaluator must be a table")
-        self.evaluator = copy.deepcopy(dict(evaluator)) if evaluator is not None else None
         self._judge = None
         self._details: dict[str, Any] = {}
 
     def _get_judge(self):
         if self._judge is None:
-            if self.evaluator is None:
+            if self.generation is None:
                 raise ValueError(
-                    "LongMemEval-V2 includes LLM-scored questions. Configure benchmarks.options.evaluator "
-                    "with backend='transformers' and model_path for a local judge, or an explicit "
-                    "openai_compatible judge. No heuristic fallback is used."
+                    "LongMemEval-V2 includes LLM-scored questions. Configure benchmarks.generation "
+                    "with a named generator. No heuristic fallback is used."
                 )
-            self._judge = make_judge(self.evaluator)
+            self._judge = Judge(self.generation, self.generation_settings)
         return self._judge
 
     def _selected_questions(self) -> list[dict[str, Any]]:

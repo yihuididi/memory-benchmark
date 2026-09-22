@@ -61,7 +61,7 @@ Rebuild the image whenever you change the extras.
 ### Experiment configuration
 
 Start with [`configs/demo.toml`](configs/demo.toml). A configuration contains
-one or more benchmark and memory entries, plus an agent and generator:
+one or more benchmark and memory entries, plus an agent and named generators:
 
 ```toml
 [[benchmarks]]
@@ -74,10 +74,13 @@ type = "verbatim"
 [agent]
 type = "shared"
 
-[generation]
+[generators.reader]
 type = "deterministic"
 
-[generation.settings]
+[agent.generation]
+generator = "reader"
+
+[agent.generation.settings]
 temperature = 0.0
 ```
 
@@ -85,10 +88,34 @@ temperature = 0.0
 used in results and defaults to `type`. Pass constructor arguments in an
 `options` table. Paths are relative to the process working directory.
 
-The runner creates a fresh benchmark, memory, generator, and agent for each
-benchmark-memory pair and episode. Memory is prepared once per episode, then
-each question is evaluated independently. Evaluation references are available
-only to the benchmark scorer, not to memory or the agent.
+Each `[generators.<name>]` defines a backend `type` and constructor `options`.
+Select it with `generator = "<name>"` under `[agent.generation]`,
+`[benchmarks.generation]`, or `[memories.generation]`. Each binding has its own
+`settings` table; settings are never inherited from another component. Agent
+bindings are required. Benchmarks and memories can omit generation when unused.
+LongMemEval requires a benchmark binding when selected questions need LLM judging.
+
+To use the reader endpoint for judging, set `generator = "reader"` in
+`[benchmarks.generation]`, with separate judge settings such as `max_tokens = 512`
+and `temperature = 0`. See `configs/longmemeval-v2-enterprise.toml` for a separate
+local Transformers judge. Its output is constrained to the benchmark JSON schema;
+remote output is validated against that same schema. Invalid judgments fail the run.
+
+The runner creates a benchmark and its generator handle per benchmark-memory pair,
+and fresh memory, agent, and memory/agent generator handles per episode. Backends
+load lazily. Reusing a definition does not share backend instances, mutable state,
+or adapters; two local bindings may load two copies of model weights. Memory is
+prepared once per episode. Only benchmark scoring receives evaluation references.
+The runner closes generators, including on failure; components borrow them.
+
+Migration: the old `[generation]` and `[benchmarks.options.evaluator]` tables are
+rejected. Move model construction options into named definitions, and move
+inference settings into component bindings. Replace evaluator `backend` with
+generator `type`. For Transformers, `max_new_tokens`, `do_sample`, and
+`chat_template_kwargs` belong in binding settings; `model_path`, `device`, `dtype`,
+and optional `max_context_tokens` belong in backend options. Set
+`chat_template_kwargs.enable_thinking = false` to preserve the former Qwen judge
+behavior. Remote generators require an explicit `base_url` and `model`.
 
 ## Add a module
 
@@ -193,3 +220,15 @@ This project includes or adapts code from third-party sources.
 Copyright and licensing information for those components is available in
 [NOTICE.md](NOTICE.md) and/or the [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES/)
 directory.
+
+Benchmarks and memories receive optional dependencies through
+`bind_generation(generator, settings)` before validation/preparation. Implementations
+can use `self.generation.generate(..., settings=self.generation_settings)` during
+preparation, retrieval, or scoring. Do not close borrowed generators. Agents retain
+`answer(request, memory, generation, settings)`.
+
+Generators may implement `preflight()` for checks that do not load weights or
+contact servers. `generate_structured(messages, settings=..., schema=...)` defaults
+to ordinary generation; callers must validate the returned JSON. The Transformers
+backend overrides it with constrained decoding. Its ordinary generation supports
+text only and explicitly rejects attachments and model adapters.

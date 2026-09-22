@@ -9,3 +9,4 @@ register_generator = make_register(GENERATORS, BaseGenerator)
 # Decorators must be defined before importing the implementations that use them.
 from memory_bench.generators.deterministic import DeterministicGenerator
 from memory_bench.generators.openai_compatible import OpenAICompatibleGenerator
+from memory_bench.generators.transformers import TransformersGenerator

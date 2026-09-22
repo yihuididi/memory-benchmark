@@ -1,16 +1,26 @@
 """Contract for dataset loading and benchmark-owned evaluation."""
 
+import copy
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from memory_bench.config import PluginSpec
 
+from memory_bench.generators.base import BaseGenerator
 from memory_bench.types import Episode, EvaluationCase, Prediction
 
 
 class BaseBenchmark(ABC):
     supports_scoring: bool = True
+
+    generation: BaseGenerator | None = None
+    generation_settings: dict[str, Any] | None = None
+
+    def bind_generation(self, generator: BaseGenerator, settings: Mapping[str, Any]) -> None:
+        """Borrow a runner-owned generator with independent inference settings."""
+        self.generation = generator
+        self.generation_settings = copy.deepcopy(dict(settings))
 
     @abstractmethod
     def load(self) -> Iterable[Episode]:

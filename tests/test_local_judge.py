@@ -1,10 +1,14 @@
+from contextlib import nullcontext
 from types import SimpleNamespace
+import sys
 
 import pytest
 from pydantic import ValidationError
 
-from memory_bench.benchmarks.local_judge import BinaryJudgement, LocalJudge
-from memory_bench.benchmarks.longmemeval_v2 import make_judge
+from memory_bench.benchmarks.longmemeval_v2 import Judge, binary_judgement_schema
+from memory_bench.generators.transformers import TransformersGenerator
+from memory_bench.generators.base import UnsupportedModelAdapterError
+from memory_bench.types import Message
 
 
 @pytest.mark.parametrize("raw", [
@@ -19,92 +23,100 @@ from memory_bench.benchmarks.longmemeval_v2 import make_judge
 ])
 def test_judge_schema_rejects_invalid_or_incomplete_output(raw):
     with pytest.raises(ValidationError):
-        BinaryJudgement.model_validate_json(raw)
+        binary_judgement_schema().model_validate_json(raw)
 
 
-def test_local_judge_never_downloads_missing_model(tmp_path):
-    judge = LocalJudge(model_path=str(tmp_path))
-    with pytest.raises(FileNotFoundError, match="Local judge model missing"):
-        judge.preflight()
 
-
-def test_model_selection_is_explicit():
-    with pytest.raises(ValueError, match="Unsupported evaluator backend"):
-        make_judge({"backend": "guess"})
-    with pytest.raises(TypeError, match="model_path"):
-        make_judge({"backend": "transformers"})
-
-
-def test_local_judge_wraps_transformers_model_passes_schema_and_reuses_it(tmp_path, monkeypatch):
-    pytest.importorskip("torch")
-    transformers = pytest.importorskip("transformers")
-    outlines = pytest.importorskip("outlines")
+@pytest.fixture
+def local_backend(tmp_path, monkeypatch):
     (tmp_path / "config.json").write_text('{}')
     calls = []
-    # A small actual HF model exercises the Outlines tokenizer/backend conversion.
-    from tokenizers import Tokenizer
-    from tokenizers.models import WordLevel
-    from tokenizers.pre_tokenizers import Whitespace
-    raw_tokenizer = Tokenizer(WordLevel({"[UNK]": 0, "[EOS]": 1, "hello": 2}, unk_token="[UNK]"))
-    raw_tokenizer.pre_tokenizer = Whitespace()
-    tokenizer = transformers.PreTrainedTokenizerFast(
-        tokenizer_object=raw_tokenizer, unk_token="[UNK]", eos_token="[EOS]",
-        chat_template="{% for m in messages %}{{ m.content }}{% endfor %}", model_max_length=4096,
-    )
-    model = transformers.GPT2LMHeadModel(transformers.GPT2Config(
-        vocab_size=3, n_layer=1, n_head=1, n_embd=8, n_positions=4096,
-    ))
-    def load_model(*args, **kwargs):
-        calls.append(("model", kwargs))
-        return model
-    def load_tokenizer(*args, **kwargs):
-        calls.append(("tokenizer", kwargs))
-        return tokenizer
+    model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=4096), dtype="float32")
+    model.eval = lambda: model
+    tokenizer = SimpleNamespace(chat_template="template", model_max_length=4096,
+        apply_chat_template=lambda *a, **kw: "prompt", encode=lambda *a: [1, 2])
+    def load(kind, value):
+        def from_pretrained(path, **kwargs):
+            calls.append((kind, kwargs))
+            return value
+        return SimpleNamespace(from_pretrained=from_pretrained)
     def generator(wrapped, schema):
-        assert schema is BinaryJudgement
+        calls.append(("schema", schema))
         def generate(prompt, **kwargs):
             calls.append(("generate", kwargs))
-            return '{"label": 1, "reason": "Correct insight"}'
+            return '{"label": 1, "reason": "Correct insight"}' if schema else "plain answer"
         return generate
-    monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", load_model)
-    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", load_tokenizer)
-    monkeypatch.setattr(outlines, "Generator", generator)
-    judge = LocalJudge(model_path=str(tmp_path), device="cpu", max_new_tokens=80)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(inference_mode=nullcontext))
+    monkeypatch.setitem(sys.modules, "transformers", SimpleNamespace(
+        AutoModelForCausalLM=load("model", model), AutoTokenizer=load("tokenizer", tokenizer)))
+    monkeypatch.setitem(sys.modules, "outlines", SimpleNamespace(
+        from_transformers=lambda *a: "wrapped", Generator=generator))
+    monkeypatch.setattr("memory_bench.generators.transformers.version", lambda name: "test-version")
+    return TransformersGenerator(model_path=str(tmp_path), device="cpu"), calls
+
+
+def test_local_backend_never_downloads_missing_model(tmp_path):
+    generator = TransformersGenerator(model_path=str(tmp_path))
+    with pytest.raises(FileNotFoundError, match="Local model missing"):
+        generator.preflight()
+    generator.close()
+
+
+def test_local_backend_constrains_json_reuses_model_and_supports_text(local_backend):
+    generator, calls = local_backend
+    judge = Judge(generator, {"max_new_tokens": 80, "chat_template_kwargs": {"enable_thinking": False}})
     for _ in range(2):
         assert judge.score("llm_gotchas_checker", question="q", reference="private", raw="a", parsed="a")
-    assert sum(name == "model" for name, _ in calls) == 1
-    for name, kwargs in calls:
-        if name in ("model", "tokenizer"):
+    assert generator.generate([Message("user", "q")], settings={}).answer == "plain answer"
+    assert sum(kind == "model" for kind, _ in calls) == 1
+    assert [value for kind, value in calls if kind == "schema"] == [binary_judgement_schema(), binary_judgement_schema(), None]
+    for kind, kwargs in calls:
+        if kind in ("model", "tokenizer"):
             assert kwargs["local_files_only"] is True
             assert kwargs["trust_remote_code"] is False
-        else:
-            assert kwargs == {"max_new_tokens": 80, "do_sample": False}
     assert judge.details["reason"] == "Correct insight"
+    assert judge.details["input_tokens"] == 2
+    assert judge.details["versions"]["outlines"] == "test-version"
     judge.close()
-    assert judge.model is judge.tokenizer is judge.generator is None
+    assert generator.model is not None  # Borrowed resource remains owned by runner.
+    generator.close()
+    assert generator.model is generator.tokenizer is generator.wrapped is None
 
 
-def test_local_judge_does_not_truncate_or_score_overflow(monkeypatch, tmp_path):
-    judge = LocalJudge(model_path=str(tmp_path), device="cpu", max_new_tokens=30)
-    monkeypatch.setattr(judge, "_load", lambda: None)
-    judge.model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=100))
-    judge.tokenizer = SimpleNamespace(model_max_length=100,
-                                     apply_chat_template=lambda *a, **kw: "prompt",
-                                     encode=lambda *a, **kw: [1] * 80)
-    judge.generator = lambda *a, **kw: pytest.fail("Overflow must fail before inference")
+def test_local_backend_does_not_truncate_overflow(local_backend):
+    generator, calls = local_backend
+    generator._load()
+    generator.tokenizer.encode = lambda *a: [1] * 4000
     with pytest.raises(ValueError, match="never truncated"):
+        generator.generate([Message("user", "q")], settings={})
+    assert not any(kind == "generate" for kind, _ in calls)
+
+
+def test_local_backend_invalid_json_is_an_evaluation_failure(local_backend, monkeypatch):
+    generator, _ = local_backend
+    monkeypatch.setattr(sys.modules["outlines"], "Generator", lambda *a: lambda *a, **kw: '{"label": 1')
+    judge = Judge(generator, {})
+    with pytest.raises(ValueError, match="Could not parse"):
         judge.score("llm_gotchas_checker", question="q", reference="r", raw="a", parsed="a")
     assert judge.details == {}
 
 
-def test_local_judge_invalid_generation_is_not_a_zero_score(monkeypatch, tmp_path):
-    pytest.importorskip("torch")
-    judge = LocalJudge(model_path=str(tmp_path), device="cpu", max_new_tokens=30)
-    monkeypatch.setattr(judge, "_load", lambda: None)
-    judge.model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=100))
-    judge.tokenizer = SimpleNamespace(model_max_length=100,
-                                     apply_chat_template=lambda *a, **kw: "prompt",
-                                     encode=lambda *a, **kw: [1])
-    judge.generator = lambda *a, **kw: '{"label": 1'
-    with pytest.raises(ValueError, match="invalid/incomplete JSON"):
-        judge.score("llm_gotchas_checker", question="q", reference="r", raw="a", parsed="a")
+@pytest.mark.parametrize("settings", [
+    {"max_new_tokens": 0}, {"do_sample": "false"}, {"unknown": 1},
+    {"chat_template_kwargs": {"tokenize": True}},
+])
+def test_local_backend_rejects_invalid_settings_before_loading(tmp_path, settings):
+    generator = TransformersGenerator(model_path=str(tmp_path))
+    with pytest.raises(ValueError):
+        generator.generate([Message("user", "q")], settings=settings)
+    assert generator.model is None
+
+
+def test_local_backend_rejects_nontext_and_adapters(tmp_path):
+    generator = TransformersGenerator(model_path=str(tmp_path))
+    with pytest.raises(ValueError, match="attachments"):
+        generator.generate([], settings={}, attachments=["image.png"])
+    with pytest.raises(UnsupportedModelAdapterError):
+        generator.generate([], settings={}, model_adapter=object())
+    with pytest.raises(ValueError, match="text messages"):
+        generator.generate([Message("user", ({"type": "text", "text": "q"},))], settings={})

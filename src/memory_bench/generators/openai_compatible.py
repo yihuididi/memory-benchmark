@@ -64,8 +64,8 @@ class OpenAICompatibleGenerator(BaseGenerator):
         if not isinstance(base_url, str) or not base_url.startswith(("http://", "https://")):
             raise ValueError("base_url must be an explicit HTTP(S) model endpoint")
         self.model = model
-        self.client = create_client(base_url=base_url, api_key=os.environ.get(api_key_env) or "EMPTY",
-                                    timeout=timeout_seconds)
+        self.base_url, self.api_key_env, self.timeout_seconds = base_url, api_key_env, timeout_seconds
+        self.client = None
 
     def generate(self, messages: Sequence[Message], *, settings: Mapping[str, Any],
                  model_adapter: ModelAdapterRef | None = None,
@@ -82,6 +82,9 @@ class OpenAICompatibleGenerator(BaseGenerator):
         extra = settings.get("extra_body", {})
         if not isinstance(extra, Mapping) or set(extra) & {"model", "messages", "stream", "n"}:
             raise ValueError("Unsupported generation settings in extra_body")
+        if self.client is None:
+            self.client = create_client(base_url=self.base_url,
+                api_key=os.environ.get(self.api_key_env) or "EMPTY", timeout=self.timeout_seconds)
         response = self.client.chat.completions.create(
             model=self.model, messages=encode_messages(messages, attachments), **copy.deepcopy(dict(settings)),
         )
@@ -97,4 +100,6 @@ class OpenAICompatibleGenerator(BaseGenerator):
                                              ("prompt_tokens", "completion_tokens", "total_tokens")}})
 
     def close(self) -> None:
-        self.client.close()
+        if self.client is not None:
+            self.client.close()
+            self.client = None

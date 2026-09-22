@@ -8,6 +8,15 @@ from memory_bench.types import Message, ModelAdapterRef, Prediction
 
 
 class BaseGenerator(ABC):
+    def preflight(self) -> None:
+        """Check backend configuration without loading weights or contacting a server."""
+
+    def generate_structured(
+        self, messages: Sequence[Message], *, settings: Mapping[str, Any], schema: Any,
+    ) -> Prediction:
+        """Request JSON through prompts; callers must validate the returned content."""
+        return self.generate(messages, settings=settings)
+
     @abstractmethod
     def generate(
         self,
