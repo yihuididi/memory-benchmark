@@ -10,13 +10,12 @@ Requirements: Python 3.12+ and uv.
 
 ```sh
 uv sync --locked
-uv run memory-bench run --config configs/demo.toml
+uv run memory-bench run --config configs/longmemeval-v2-enterprise.toml
 uv run pytest
 ```
 
-The demo runs every configured benchmark and memory combination. It uses a
-synthetic benchmark, a no-memory baseline, a verbatim memory, and a
-deterministic generator, so it needs no dataset, model, credentials, or GPU.
+The default enterprise configuration runs the LongMemEval v2 benchmark stack,
+including the selected memory backends and the required model or judge setup.
 
 Results are written to a unique directory under `results/` and episode-local
 workspaces are written under `artifacts/`. Each run contains:
@@ -28,7 +27,7 @@ workspaces are written under `artifacts/`. Each run contains:
 Run the CLI offline after dependencies are installed:
 
 ```sh
-uv run --offline --no-sync memory-bench run --config configs/demo.toml
+uv run --offline --no-sync memory-bench run --config configs/longmemeval-v2-enterprise.toml
 ```
 
 ## Configuration
@@ -53,15 +52,14 @@ docker compose up --build
 The current enterprise configuration uses `model-api` for the model server
 client and `local-judge` for its local evaluator. Add `vision` when using the
 LongMemEval agent with memory context that requires its vision processor:
-`BENCH_EXTRA: "model-api local-judge vision"`. Use `BENCH_EXTRA: ""` for
-the offline demo. These names refer to `[project.optional-dependencies]` in
-`pyproject.toml`; each becomes a separate `uv sync --extra` argument.
+`BENCH_EXTRA: "model-api local-judge vision"`. These names refer to
+`[project.optional-dependencies]` in `pyproject.toml`; each becomes a separate
+`uv sync --extra` argument.
 Rebuild the image whenever you change the extras.
 
 ### Experiment configuration
 
-Start with [`configs/demo.toml`](configs/demo.toml). A configuration contains
-one or more benchmark and memory entries, plus an agent and named generators:
+Start with [`configs/longmemeval-v2-enterprise.toml`](configs/longmemeval-v2-enterprise.toml). A configuration contains one or more benchmark and memory entries, plus an agent and named generators:
 
 ```toml
 [[benchmarks]]

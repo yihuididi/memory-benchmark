@@ -7,5 +7,4 @@ AGENTS: dict[str, type[BaseAgent]] = {}
 register_agent = make_register(AGENTS, BaseAgent)
 
 # Decorators must be defined before importing the implementations that use them.
-from memory_bench.agents.shared import SharedAgent
 from memory_bench.agents.longmemeval_v2 import LongMemEvalV2Agent

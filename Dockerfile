@@ -22,4 +22,4 @@ RUN set -eu; set -f; \
 RUN mkdir -p data models results artifacts
 
 ENTRYPOINT ["uv", "run", "--no-sync", "memory-bench"]
-CMD ["run", "--config", "configs/demo.toml"]
+CMD ["run", "--config", "configs/longmemeval-v2-enterprise.toml"]
