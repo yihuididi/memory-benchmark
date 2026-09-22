@@ -5,7 +5,7 @@ services:
       context: .
       args:
         # Space-separated optional extras from pyproject.toml; use "" for the demo.
-        BENCH_EXTRA: "model-api local-judge"
+        BENCH_EXTRA: "openai-compatible local-transformers"
     # Select the experiment here, then start it with `docker compose up`.
     command: ["run", "--config", "configs/longmemeval-v2-enterprise.toml"]
     restart: "no"

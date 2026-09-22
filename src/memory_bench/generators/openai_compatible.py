@@ -19,7 +19,7 @@ def create_client(**kwargs: Any):
     try:
         from openai import OpenAI
     except ImportError as exc:
-        raise RuntimeError("Model endpoints require: uv sync --extra model-api") from exc
+        raise RuntimeError("Model endpoints require: uv sync --extra openai-compatible") from exc
     return OpenAI(max_retries=2, **kwargs)
 
 

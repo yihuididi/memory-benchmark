@@ -38,7 +38,7 @@ class LongMemEvalV2Agent(BaseAgent):
             try:
                 from transformers import AutoProcessor
             except ImportError as exc:
-                raise RuntimeError("Evidence token counting requires: uv sync --extra vision") from exc
+                raise RuntimeError("Evidence token counting requires: uv sync --extra transformers-vision") from exc
             self._processor = AutoProcessor.from_pretrained(
                 self.processor_path, revision=self.processor_revision,
                 local_files_only=self.local_files_only, trust_remote_code=False,

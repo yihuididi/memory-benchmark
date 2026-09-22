@@ -512,7 +512,7 @@ version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
-local-judge = [
+local-transformers = [
     { name = "accelerate" },
     { name = "outlines" },
     { name = "pillow" },
@@ -520,11 +520,11 @@ local-judge = [
     { name = "torch" },
     { name = "transformers" },
 ]
-model-api = [
+openai-compatible = [
     { name = "openai" },
     { name = "pydantic" },
 ]
-vision = [
+transformers-vision = [
     { name = "pillow" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -538,19 +538,19 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'local-judge'", specifier = ">=1.2,<2" },
-    { name = "openai", marker = "extra == 'model-api'", specifier = ">=1.100,<3" },
-    { name = "outlines", marker = "extra == 'local-judge'", specifier = ">=1.2,<2" },
-    { name = "pillow", marker = "extra == 'local-judge'", specifier = ">=11,<13" },
-    { name = "pillow", marker = "extra == 'vision'", specifier = ">=11,<13" },
-    { name = "pydantic", marker = "extra == 'local-judge'", specifier = ">=2.10,<3" },
-    { name = "pydantic", marker = "extra == 'model-api'", specifier = ">=2.10,<3" },
-    { name = "torch", marker = "extra == 'local-judge'", specifier = ">=2.6,<3" },
-    { name = "torchvision", marker = "extra == 'vision'", specifier = ">=0.21,<1" },
-    { name = "transformers", marker = "extra == 'local-judge'", specifier = ">=4.57,<6" },
-    { name = "transformers", marker = "extra == 'vision'", specifier = ">=5.2,<6" },
+    { name = "accelerate", marker = "extra == 'local-transformers'", specifier = ">=1.2,<2" },
+    { name = "openai", marker = "extra == 'openai-compatible'", specifier = ">=1.100,<3" },
+    { name = "outlines", marker = "extra == 'local-transformers'", specifier = ">=1.2,<2" },
+    { name = "pillow", marker = "extra == 'local-transformers'", specifier = ">=11,<13" },
+    { name = "pillow", marker = "extra == 'transformers-vision'", specifier = ">=11,<13" },
+    { name = "pydantic", marker = "extra == 'local-transformers'", specifier = ">=2.10,<3" },
+    { name = "pydantic", marker = "extra == 'openai-compatible'", specifier = ">=2.10,<3" },
+    { name = "torch", marker = "extra == 'local-transformers'", specifier = ">=2.6,<3" },
+    { name = "torchvision", marker = "extra == 'transformers-vision'", specifier = ">=0.21,<1" },
+    { name = "transformers", marker = "extra == 'local-transformers'", specifier = ">=4.57,<6" },
+    { name = "transformers", marker = "extra == 'transformers-vision'", specifier = ">=5.2,<6" },
 ]
-provides-extras = ["model-api", "local-judge", "vision"]
+provides-extras = ["openai-compatible", "local-transformers", "transformers-vision"]
 
 [package.metadata.requires-dev]
 dev = [

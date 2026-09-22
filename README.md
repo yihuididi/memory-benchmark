@@ -42,17 +42,17 @@ needed by that experiment, then build and run:
 build:
   context: .
   args:
-    BENCH_EXTRA: "model-api local-judge"
+    BENCH_EXTRA: "openai-compatible local-transformers"
 ```
 
 ```sh
 docker compose up --build
 ```
 
-The current enterprise configuration uses `model-api` for the model server
-client and `local-judge` for its local evaluator. Add `vision` when using the
+The current enterprise configuration uses `openai-compatible` for the model server
+client and `local-transformers` for its local evaluator. Add `transformers-vision` when using the
 LongMemEval agent with memory context that requires its vision processor:
-`BENCH_EXTRA: "model-api local-judge vision"`. These names refer to
+`BENCH_EXTRA: "openai-compatible local-transformers transformers-vision"`. These names refer to
 `[project.optional-dependencies]` in `pyproject.toml`; each becomes a separate
 `uv sync --extra` argument.
 Rebuild the image whenever you change the extras.

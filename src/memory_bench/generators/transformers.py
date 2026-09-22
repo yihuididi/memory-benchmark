@@ -36,7 +36,7 @@ class TransformersGenerator(BaseGenerator):
             import torch
             import transformers
         except ImportError as exc:
-            raise RuntimeError("Local generation requires: uv sync --extra local-judge") from exc
+            raise RuntimeError("Local generation requires: uv sync --extra local-transformers") from exc
         if self.device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("Local generation requested CUDA, but CUDA is unavailable; configure device='cpu' or fix the GPU driver")
 
