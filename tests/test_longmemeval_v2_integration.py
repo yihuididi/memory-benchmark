@@ -1,11 +1,13 @@
 import json
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
 from test_longmemeval_v2 import dataset, read_jsonl, write_jsonl
-from memory_bench.benchmarks.longmemeval_v2 import LongMemEvalV2Benchmark
-from memory_bench.config import PluginSpec, ComponentSpec, GenerationBinding
+from memory_bench.config import PluginSpec, ComponentSpec, GenerationBinding, instantiate
+from memory_bench.benchmarks import BENCHMARKS
+from memory_bench.benchmarks.base import BaseBenchmark
 from memory_bench.generators.base import BaseGenerator
 from memory_bench.runner import run
 from memory_bench.types import Prediction
@@ -43,8 +45,11 @@ def test_complete_matrix_preserves_judge_privacy_timing_and_diagnostics(
         def close(self):
             pass
     registered = install_plugins(Generation=Generator)
-    config = config_factory(generation=registered["Generation"], memories=[("none", "none", {}),
-                                                                                 ("verbatim", "verbatim", {})])
+    config = config_factory(
+        generation=registered["Generation"],
+        memories=[("none", "none", {}), ("verbatim", "verbatim", {})],
+        agent_type="fixture_agent",
+    )
     config = replace(config, generators={**config.generators, "judge": PluginSpec("judge", "fixture_judge")},
         benchmarks=(ComponentSpec("lme", "longmemeval_v2", {
         "data_root": str(dataset),
@@ -76,15 +81,18 @@ def test_missing_judge_fails_before_any_model_or_memory_work(dataset, config_fac
     monkeypatch.setattr(MEMORIES["none"], "__init__", unexpected)
     config = config_factory(generation="openai_compatible", benchmarks=[
         ("lme", "longmemeval_v2", {"data_root": str(dataset)}),
-    ])
+    ], agent_type="fixture_agent")
     with pytest.raises(ValueError, match="Configure benchmarks.generation"):
         run(config)
 
 
-def test_deterministic_subset_needs_no_judge_or_model_dependencies(dataset):
+def test_static_subset_needs_no_judge_or_model_dependencies(dataset):
     prepare_scoring_questions(dataset)
-    benchmark = LongMemEvalV2Benchmark(data_root=dataset, limit=1)
-    benchmark.validate_run(PluginSpec("agent", "shared"), PluginSpec("generator", "custom"))
+    benchmark = cast(Any, instantiate(
+        PluginSpec("lme", "longmemeval_v2", {"data_root": str(dataset), "limit": 1}),
+        BENCHMARKS, BaseBenchmark,
+    ))
+    benchmark.validate_run(PluginSpec("agent", "custom"), PluginSpec("generator", "custom"))
     case = next(iter(benchmark.load())).cases[0]
     assert benchmark.score(case, Prediction(r"\boxed{A}"))["score"] == 1
     assert benchmark._judge is None
@@ -95,9 +103,12 @@ def test_dataset_cannot_override_judge_during_preflight(dataset):
     rows = read_jsonl(dataset / "questions.jsonl")
     rows[0]["eval_function"] = "llm_gotchas_checker|evaluator_model=attacker"
     write_jsonl(dataset / "questions.jsonl", rows)
-    benchmark = LongMemEvalV2Benchmark(data_root=dataset)
+    benchmark = cast(Any, instantiate(
+        PluginSpec("lme", "longmemeval_v2", {"data_root": str(dataset)}),
+        BENCHMARKS, BaseBenchmark,
+    ))
     with pytest.raises(ValueError, match="Unsupported option"):
-        benchmark.validate_run(PluginSpec("agent", "shared"), PluginSpec("generator", "custom"))
+        benchmark.validate_run(PluginSpec("agent", "custom"), PluginSpec("generator", "custom"))
 
 
 def test_bound_judge_failure_preserves_answer_and_closes_backends(dataset, config_factory, install_plugins, monkeypatch):
@@ -118,7 +129,7 @@ def test_bound_judge_failure_preserves_answer_and_closes_backends(dataset, confi
     from memory_bench.generators import GENERATORS
     monkeypatch.setitem(GENERATORS, "broken_judge", BrokenJudge)
     registered = install_plugins(Generation=Reader)
-    config = config_factory(generation=registered["Generation"])
+    config = config_factory(generation=registered["Generation"], agent_type="fixture_agent")
     config = replace(config,
         generators={**config.generators, "judge": PluginSpec("judge", "broken_judge")},
         benchmarks=(ComponentSpec("lme", "longmemeval_v2", {"data_root": str(dataset)}, GenerationBinding("judge")),))

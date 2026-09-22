@@ -12,9 +12,9 @@ from memory_bench.runner import run
 
 
 @pytest.mark.parametrize("register,registry,base,builtin", [
-    (register_agent, AGENTS, BaseAgent, "shared"),
-    (register_benchmark, BENCHMARKS, BaseBenchmark, "synthetic"),
-    (register_generator, GENERATORS, BaseGenerator, "deterministic"),
+    (register_agent, AGENTS, BaseAgent, "longmemeval_v2"),
+    (register_benchmark, BENCHMARKS, BaseBenchmark, "longmemeval_v2"),
+    (register_generator, GENERATORS, BaseGenerator, "openai_compatible"),
     (register_memory, MEMORIES, BaseMemory, "none"),
 ])
 def test_public_decorators_register_class_without_constructing_it(register, registry, base, builtin):
@@ -53,7 +53,7 @@ def test_decorator_rejects_wrong_base_and_abstract_class():
     registry = {}
     register = make_register(registry, BaseMemory)
     with pytest.raises(TypeError, match="subclass of BaseMemory"):
-        register("wrong")(BENCHMARKS["synthetic"])
+        register("wrong")(BENCHMARKS["longmemeval_v2"])
     with pytest.raises(TypeError, match="abstract; implement"):
         register("incomplete")(BaseMemory)
     assert registry == {}
@@ -82,41 +82,26 @@ def test_registries_reject_unrelated_and_incomplete_classes(monkeypatch):
 
 
 def test_names_default_to_types_and_repeated_names_are_rejected(config_factory):
-    config = config_factory(benchmarks=[(None, "synthetic", {})], memories=[(None, "none", {})])
-    assert config.benchmarks[0].name == "synthetic"
+    config = config_factory(benchmarks=[(None, "longmemeval_v2", {
+        "data_root": "data/longmemeval-v2", "domain": "enterprise",
+    })], memories=[(None, "none", {})])
+    assert config.benchmarks[0].name == "longmemeval_v2"
     assert config.memories[0].name == "none"
-    assert config.agent.name == "shared"
-    assert config.generators[config.agent.generation.generator].type == "deterministic"
+    assert config.agent.name == "longmemeval_v2"
+    assert config.generators[config.agent.generation.generator].type == "openai_compatible"
     with pytest.raises(ConfigError, match="memories names must be unique"):
         config_factory(memories=[(None, "verbatim", {}), (None, "verbatim", {"separator": " "})])
     with pytest.raises(ConfigError, match="benchmarks names must be unique"):
-        config_factory(benchmarks=[("duplicate", "synthetic", {}), ("duplicate", "synthetic", {})])
-
-
-def test_memory_variants_pass_options_and_keep_distinct_results(config_factory):
-    config = config_factory(memories=[
-        ("lines", "verbatim", {"separator": "\n"}),
-        ("joined", "verbatim", {"separator": " "}),
-    ])
-    output = run(config)
-    summary = json.loads((output / "summary.json").read_text())
-    assert {pair["memory"]: pair["metrics"]["exact_match"] for pair in summary["pairs"]} == {
-        "lines": 1.0, "joined": 0.0,
-    }
-    assert summary["configuration"]["memories"] == [
-        {"name": "lines", "type": "verbatim", "options": {"separator": "\n"}},
-        {"name": "joined", "type": "verbatim", "options": {"separator": " "}},
-    ]
-    rows = [json.loads(line) for line in (output / "predictions.jsonl").read_text().splitlines()]
-    assert all(row["case_id"] == row["request_id"] for row in rows)
+        config_factory(benchmarks=[("duplicate", "longmemeval_v2", {"data_root": "data"}),
+                                   ("duplicate", "longmemeval_v2", {"data_root": "data"})])
 
 
 @pytest.mark.parametrize("registry,base,component_type,options", [
     (MEMORIES, BaseMemory, "verbatim", {"not_an_option": 1}),
     (MEMORIES, BaseMemory, "verbatim", {"separator": 42}),
-    (BENCHMARKS, BaseBenchmark, "synthetic", {"prefix": False}),
-    (GENERATORS, BaseGenerator, "deterministic", {"unknown_answer": 42}),
-    (AGENTS, BaseAgent, "shared", {"system_prompt": 42}),
+    (BENCHMARKS, BaseBenchmark, "longmemeval_v2", {"tier": "invalid"}),
+    (GENERATORS, BaseGenerator, "openai_compatible", {"model": 42}),
+    (AGENTS, BaseAgent, "longmemeval_v2", {"domain": "invalid"}),
 ])
 def test_invalid_options_identify_component_and_option(registry, base, component_type, options):
     with pytest.raises(PluginError) as caught:
@@ -132,12 +117,9 @@ def test_loader_only_benchmark_rejected_before_any_matrix_work(config_factory, m
     def unexpected(*args, **kwargs):
         pytest.fail("Scoring support must be checked before loading data or constructing backends")
 
-    monkeypatch.setattr(BENCHMARKS["synthetic"], "load", unexpected)
     monkeypatch.setattr(BENCHMARKS["longmemeval_v2"], "load", unexpected)
     monkeypatch.setattr(MEMORIES["none"], "__init__", unexpected)
-    monkeypatch.setattr(GENERATORS["deterministic"], "__init__", unexpected)
     config = config_factory(benchmarks=[
-        ("demo", "synthetic", {}),
         ("lme", "longmemeval_v2", {"data_root": "not-needed-for-preflight"}),
     ])
     with pytest.raises(PluginError, match="does not support scoring.*inspection"):

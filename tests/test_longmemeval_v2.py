@@ -381,7 +381,7 @@ def test_runner_exports_stable_case_id_without_exposing_it_to_model(
 
     class RecordingGenerator(BaseGenerator):
         def generate(self, messages, *, settings, model_adapter=None, attachments=()):
-            prompt = "\n".join(message.content for message in messages)
+            prompt = json.dumps([message.content for message in messages], default=str)
             assert "q-web-first" not in prompt
             assert "PRIVATE-" not in prompt
             return Prediction("test answer")
@@ -393,6 +393,7 @@ def test_runner_exports_stable_case_id_without_exposing_it_to_model(
     config = config_factory(
         benchmarks=[("lme", "fixture_lme", {"data_root": str(dataset), "limit": 1})],
         generation="recording",
+        agent_type="fixture_agent",
     )
     output = run(config)
     row = json.loads((output / "predictions.jsonl").read_text())

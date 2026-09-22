@@ -31,7 +31,7 @@ def case(spec, reference, category="static-environment"):
     ("norm_phrase_set_match", "a {nested} value", r"\boxed{a {nested} value}", 1),
     ("norm_phrase_set_match", "hello", "", 0),
 ])
-def test_official_deterministic_scoring(tmp_path, spec, reference, answer, expected):
+def test_official_scoring(tmp_path, spec, reference, answer, expected):
     benchmark = LongMemEvalV2Benchmark(data_root=tmp_path)
     score = benchmark.score(case(spec, reference), Prediction(answer))
     assert score["score"] == expected
