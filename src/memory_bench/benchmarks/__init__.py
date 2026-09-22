@@ -8,3 +8,4 @@ register_benchmark = make_register(BENCHMARKS, BaseBenchmark)
 
 # Decorators must be defined before importing the implementations that use them.
 from memory_bench.benchmarks.longmemeval_v2 import LongMemEvalV2Benchmark
+from memory_bench.benchmarks.ripple_edit import RippleEditBenchmark

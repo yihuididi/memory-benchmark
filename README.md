@@ -203,10 +203,10 @@ For a generator, implement `BaseGenerator.generate()` and `close()` and use
 
 The built-in registry types are:
 
-- Benchmarks: `synthetic`, `longmemeval_v2`.
+- Benchmarks: `longmemeval_v2`, `ripple_edit`.
 - Memories: `none`, `verbatim`.
 - Generators: `deterministic`, `openai_compatible` (user-supplied model endpoint).
-- Agents: `shared`, `longmemeval_v2` (optional upstream prompts and evidence budget).
+- Agents: `longmemeval_v2` (upstream prompts and evidence budget), `ripple_edit`.
 
 There is no automatic module scanning. Every new implementation needs an
 explicit import in its package `__init__.py`, and can then be selected in TOML

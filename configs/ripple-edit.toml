@@ -1,0 +1,28 @@
+# Start a compatible model server, or replace the reader settings below.
+[agent]
+type = "ripple_edit"
+[agent.generation]
+generator = "reader"
+[agent.generation.settings]
+temperature = 0.0
+max_tokens = 128
+
+[generators.reader]
+type = "openai_compatible"
+[generators.reader.options]
+model = "Qwen/Qwen3-8B"
+base_url = "http://localhost:8001/v1"
+api_key_env = "READER_API_KEY"
+
+[[benchmarks]]
+type = "ripple_edit"
+[benchmarks.options]
+data_root = "data/ripple_edit"
+subsets = ["recent", "random", "popular"]
+# limit = 5  # First N edits per subset; omit for the full benchmark.
+
+[[memories]]
+type = "none"
+
+[[memories]]
+type = "verbatim"
