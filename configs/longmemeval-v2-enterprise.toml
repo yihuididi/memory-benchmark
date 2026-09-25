@@ -10,8 +10,8 @@ processor_path = "Qwen/Qwen3.5-9B"
 [generators.reader]
 type = "openai_compatible"
 [generators.reader.options]
-model = "Qwen/Qwen3.5-9B"
-base_url = "http://localhost:8023/v1"
+model = "Qwen/Qwen3-8B"
+base_url = "http://localhost:8001/v1"
 api_key_env = "READER_API_KEY"
 [agent.generation]
 generator = "reader"
@@ -24,11 +24,11 @@ top_p = 0.95
 top_k = 20
 
 [generators.judge]
-type = "transformers"
+type = "openai_compatible"
 [generators.judge.options]
-model_path = "models/Qwen3-8B"
-device = "cuda"
-dtype = "auto"
+model = "Qwen/Qwen3-8B"
+base_url = "http://localhost:8001/v1"
+api_key_env = "READER_API_KEY"
 
 [[benchmarks]]
 type = "longmemeval_v2"
@@ -40,10 +40,8 @@ tier = "small"
 [benchmarks.generation]
 generator = "judge"
 [benchmarks.generation.settings]
-max_new_tokens = 512
-do_sample = false
-[benchmarks.generation.settings.chat_template_kwargs]
-enable_thinking = false
+max_tokens = 512
+temperature = 0.0
 
 [[memories]]
 type = "none"
