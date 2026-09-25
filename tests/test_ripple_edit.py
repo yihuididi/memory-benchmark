@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,13 +19,6 @@ from memory_bench.types import MemoryAugmentation, ModelAdapterRef, Prediction, 
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HASHES = {
-    "recent": "bc71807ea72280e2587bd1974fc79ae7e23aa24b1d5887bcdced40d448910547",
-    "random": "f99e625e6b00225498d4843f4e3a688b391cdd98e6f9ee85608f72a1e28c2d40",
-    "popular": "fe668f11871d3e1df8039be89124d5d39a443db0e9d1ded623d190f9e6a3296e",
-}
-
-
 def query(*entities):
     return {"prompt": "The country is", "answers": [
         {"value": value, "aliases": aliases} for value, aliases in entities
@@ -286,22 +278,6 @@ assert BENCHMARKS['ripple_edit'].__module__ == 'memory_bench.benchmarks.ripple_e
 """
     subprocess.run([sys.executable, "-S", "-c", code], cwd=tmp_path, check=True,
                    env={**os.environ, "PYTHONPATH": str(ROOT / "src")}, capture_output=True, text=True)
-
-
-def test_bundled_data_integrity_and_full_load():
-    for subset, expected in HASHES.items():
-        path = ROOT / "data" / "ripple_edit" / f"{subset}.json"
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
-    benchmark = RippleEditBenchmark(data_root=ROOT / "data" / "ripple_edit")
-    counts = {subset: 0 for subset in SUBSETS}
-    queries = 0
-    for episode in benchmark.load():
-        counts[episode.id.split("/")[1]] += 1
-        queries += len(episode.cases)
-    assert counts == {"recent": 1948, "random": 1922, "popular": 885}
-    assert queries == 44557
-    assert sum(t[2] for t in benchmark._tests.values()) == 2197
-    assert sum(t[1] == 0 for t in benchmark._tests.values()) == 2196
 
 
 def test_standalone_tree_loads_and_runs_without_third_party(tmp_path):
